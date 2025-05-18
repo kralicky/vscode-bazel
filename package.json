@@ -73,6 +73,16 @@
             },
             {
                 "category": "Bazel",
+                "command": "bazel.debugTestTarget",
+                "title": "Debug Test Target"
+            },
+            {
+                "category": "Bazel",
+                "command": "bazel.testTargetWithCoverage",
+                "title": "Test Target With Coverage"
+            },
+            {
+                "category": "Bazel",
                 "command": "bazel.testAll",
                 "title": "Test Package"
             },
@@ -80,6 +90,11 @@
                 "category": "Bazel",
                 "command": "bazel.testAllRecursive",
                 "title": "Test Package Recursively"
+            },
+            {
+                "category": "Bazel",
+                "command": "bazel.testAllRecursiveWithCoverage",
+                "title": "Test Package Recursively With Coverage"
             },
             {
                 "category": "Bazel",
@@ -350,11 +365,23 @@
                     "when": "bazel.haveWorkspace"
                 },
                 {
+                    "command": "bazel.debugTestTarget",
+                    "when": "bazel.haveWorkspace"
+                },
+                {
+                    "command": "bazel.testTargetWithCoverage",
+                    "when": "bazel.haveWorkspace"
+                },
+                {
                     "command": "bazel.testAll",
                     "when": "bazel.haveWorkspace"
                 },
                 {
                     "command": "bazel.testAllRecursive",
+                    "when": "bazel.haveWorkspace"
+                },
+                {
+                    "command": "bazel.testAllRecursiveWithCoverage",
                     "when": "bazel.haveWorkspace"
                 },
                 {
@@ -412,12 +439,27 @@
                     "group": "build"
                 },
                 {
+                    "command": "bazel.testTargetWithCoverage",
+                    "when": "view == bazelWorkspace && viewItem == testRule",
+                    "group": "build"
+                },
+                {
+                    "command": "bazel.debugTestTarget",
+                    "when": "view == bazelWorkspace && viewItem == testRule",
+                    "group": "build"
+                },
+                {
                     "command": "bazel.testAll",
                     "when": "view == bazelWorkspace && viewItem == package",
                     "group": "build"
                 },
                 {
                     "command": "bazel.testAllRecursive",
+                    "when": "view == bazelWorkspace && viewItem == package",
+                    "group": "build"
+                },
+                {
+                    "command": "bazel.testAllRecursiveWithCoverage",
                     "when": "view == bazelWorkspace && viewItem == package",
                     "group": "build"
                 },
