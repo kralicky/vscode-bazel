@@ -19,6 +19,22 @@ import { blaze_query } from "../protos";
 import { IBazelTreeItem } from "./bazel_tree_item";
 import { getBazelRuleIcon } from "./icons";
 import { Resources } from "../extension/resources";
+import { BazelCQuery } from "../bazel/bazel_cquery";
+import { getDefaultBazelExecutablePath } from "../extension/configuration";
+import * as child_process from "child_process";
+import * as util from "util";
+import * as fs from "fs/promises";
+import { BazelGTestTreeItem } from "./bazel_gtest_tree_item";
+const execFile = util.promisify(child_process.execFile);
+
+async function fileExists(filename: string) {
+  try {
+    await fs.stat(filename);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** A tree item representing a build target. */
 export class BazelTargetTreeItem
@@ -38,11 +54,28 @@ export class BazelTargetTreeItem
   ) {}
 
   public mightHaveChildren(): boolean {
-    return false;
+    return this.target.rule.ruleClass === "cc_test";
   }
 
-  public getChildren(): Thenable<IBazelTreeItem[]> {
-    return Promise.resolve([]);
+  public async getChildren(): Promise<IBazelTreeItem[]> {
+    const outputs = await new BazelCQuery(
+      getDefaultBazelExecutablePath(),
+      this.workspaceInfo.bazelWorkspacePath,
+    ).queryOutputs(this.target.rule.name);
+    if (outputs.length !== 1) {
+      return [];
+    }
+    if (fileExists(outputs[0])) {
+      try {
+        const { stdout } = await execFile(outputs[0], ["--gtest_list_tests"], {
+          cwd: this.workspaceInfo.bazelWorkspacePath,
+          maxBuffer: 500 * 1024,
+        });
+        return this.parseGtestList(stdout);
+      } catch {
+        return [];
+      }
+    }
   }
 
   public getLabel(): string {
@@ -90,5 +123,38 @@ export class BazelTargetTreeItem
       targets: [`${this.target.rule.name}`],
       workspaceInfo: this.workspaceInfo,
     };
+  }
+
+  public parseGtestList(input: string): BazelGTestTreeItem[] {
+    let currentTestGroup: string = "";
+    let allTests: BazelGTestTreeItem[] = [];
+    input.split("\n").forEach((line) => {
+      if (line.startsWith("  ")) {
+        const split = line.split("#");
+        if (split.length == 2) {
+          allTests.push(
+            new BazelGTestTreeItem(
+              this.resources,
+              this.workspaceInfo,
+              this.target,
+              currentTestGroup + split[0].trim(),
+              split[1].trim(),
+            ),
+          );
+        } else {
+          allTests.push(
+            new BazelGTestTreeItem(
+              this.resources,
+              this.workspaceInfo,
+              this.target,
+              currentTestGroup + split[0].trim(),
+            ),
+          );
+        }
+      } else {
+        currentTestGroup = line.trim();
+      }
+    });
+    return allTests;
   }
 }

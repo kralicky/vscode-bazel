@@ -22,6 +22,8 @@ import {
   queryQuickPickTargets,
 } from "../bazel";
 import { getDefaultBazelExecutablePath } from "./configuration";
+import { BazelCQuery } from "../bazel/bazel_cquery";
+import path = require("path");
 
 /**
  * Builds a Bazel target and streams output to the terminal.
@@ -194,7 +196,10 @@ async function bazelRunTarget(adapter: IBazelCommandAdapter | undefined) {
  * @param adapter An object that implements {@link IBazelCommandAdapter} from
  * which the command's arguments will be determined.
  */
-async function bazelTestTarget(adapter: IBazelCommandAdapter | undefined) {
+async function bazelTestTarget(
+  adapter: IBazelCommandAdapter | undefined,
+  mode: "test" | "coverage",
+) {
   if (adapter === undefined) {
     // If the command adapter was unspecified, it means this command is being
     // invoked via the command palatte. Provide quickpick test targets for
@@ -208,14 +213,92 @@ async function bazelTestTarget(adapter: IBazelCommandAdapter | undefined) {
     // If the result was undefined, the user cancelled the quick pick, so don't
     // try again.
     if (quickPick) {
-      await bazelTestTarget(quickPick);
+      await bazelTestTarget(quickPick, mode);
     }
     return;
   }
-  const commandOptions = adapter.getBazelCommandOptions();
-  const task = createBazelTask("test", commandOptions);
+  let commandOptions = adapter.getBazelCommandOptions();
+  commandOptions.options = commandOptions.options.map(
+    (opt) => "--test_arg=" + opt,
+  );
+  const task = createBazelTask(mode, commandOptions);
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   vscode.tasks.executeTask(task);
+}
+
+async function bazelDebugTestTarget(adapter: IBazelCommandAdapter | undefined) {
+  if (adapter === undefined) {
+    // If the command adapter was unspecified, it means this command is being
+    // invoked via the command palatte. Provide quickpick test targets for
+    // the user to choose from.
+    const quickPick = await vscode.window.showQuickPick(
+      queryQuickPickTargets({ query: "kind('.*_test rule', ...)" }),
+      {
+        canPickMany: false,
+      },
+    );
+    // If the result was undefined, the user cancelled the quick pick, so don't
+    // try again.
+    if (quickPick) {
+      await bazelDebugTestTarget(quickPick);
+    }
+    return;
+  }
+
+  let commandOptions = adapter.getBazelCommandOptions();
+
+  if (commandOptions.targets.length != 1) {
+    throw new Error(
+      "bug: invalid number of targets passed to bazelDebugTestTarget",
+    );
+  }
+  const target = commandOptions.targets[0];
+  const task = createBazelTask("build", {
+    options: ["--compilation_mode", "dbg"], // omit command options here, pass them as debug args instead
+    targets: commandOptions.targets,
+    workspaceInfo: commandOptions.workspaceInfo,
+  });
+  const cwd = commandOptions.workspaceInfo.bazelWorkspacePath;
+  const query = new BazelCQuery(
+    getDefaultBazelExecutablePath(),
+    commandOptions.workspaceInfo.bazelWorkspacePath,
+  );
+
+  const execution = await vscode.tasks.executeTask(task);
+  return new Promise<Thenable<boolean>>((resolve) => {
+    const disposable = vscode.tasks.onDidEndTaskProcess(async (event) => {
+      if (event.execution === execution) {
+        disposable.dispose();
+        const outputs = await query.queryOutputs(target, [
+          "--compilation_mode",
+          "dbg",
+        ]);
+        const config: vscode.DebugConfiguration = {
+          name: "Debug Test Target: " + target,
+          type: "lldb",
+          request: "launch",
+          program: outputs[0],
+          args: commandOptions.options,
+          cwd: cwd,
+          breakpointMode: "file",
+          sourceMap: {
+            "/proc/self/cwd": "${workspaceFolder}",
+          },
+          logging: {
+            programOutput: true,
+          },
+          internalConsoleOptions: "neverOpen",
+          externalConsole: false,
+        };
+        resolve(
+          vscode.debug.startDebugging(
+            commandOptions.workspaceInfo.workspaceFolder,
+            config,
+          ),
+        );
+      }
+    });
+  });
 }
 
 /**
@@ -225,7 +308,7 @@ async function bazelTestTarget(adapter: IBazelCommandAdapter | undefined) {
  * which the command's arguments will be determined.
  */
 async function bazelTestAll(adapter: IBazelCommandAdapter | undefined) {
-  await testPackage(":all", adapter);
+  await testPackage(":all", adapter, "test");
 }
 
 /**
@@ -236,13 +319,15 @@ async function bazelTestAll(adapter: IBazelCommandAdapter | undefined) {
  */
 async function bazelTestAllRecursive(
   adapter: IBazelCommandAdapter | undefined,
+  mode: "test" | "coverage",
 ) {
-  await testPackage("/...", adapter);
+  await testPackage("/...", adapter, mode);
 }
 
 async function testPackage(
   suffix: string,
   adapter: IBazelCommandAdapter | undefined,
+  mode: "test" | "coverage",
 ) {
   if (adapter === undefined) {
     // If the command adapter was unspecified, it means this command is being
@@ -257,7 +342,7 @@ async function testPackage(
     // If the result was undefined, the user cancelled the quick pick, so don't
     // try again.
     if (quickPick) {
-      await testPackage(suffix, quickPick);
+      await testPackage(suffix, quickPick, mode);
     }
     return;
   }
@@ -267,7 +352,7 @@ async function testPackage(
     targets: commandOptions.targets.map((s) => s + suffix),
     workspaceInfo: commandOptions.workspaceInfo,
   };
-  const task = createBazelTask("test", allCommandOptions);
+  const task = createBazelTask(mode, allCommandOptions);
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   vscode.tasks.executeTask(task);
 }
@@ -315,11 +400,23 @@ export function activateWrapperCommands(): vscode.Disposable[] {
       bazelbuildAllRecursive,
     ),
     vscode.commands.registerCommand("bazel.runTarget", bazelRunTarget),
-    vscode.commands.registerCommand("bazel.testTarget", bazelTestTarget),
-    vscode.commands.registerCommand("bazel.testAll", bazelTestAll),
+    vscode.commands.registerCommand("bazel.testTarget", (adapter) =>
+      bazelTestTarget(adapter, "test"),
+    ),
+    vscode.commands.registerCommand("bazel.testTargetWithCoverage", (adapter) =>
+      bazelTestTarget(adapter, "coverage"),
+    ),
     vscode.commands.registerCommand(
-      "bazel.testAllRecursive",
-      bazelTestAllRecursive,
+      "bazel.debugTestTarget",
+      bazelDebugTestTarget,
+    ),
+    vscode.commands.registerCommand("bazel.testAll", bazelTestAll),
+    vscode.commands.registerCommand("bazel.testAllRecursive", (adapter) =>
+      bazelTestAllRecursive(adapter, "test"),
+    ),
+    vscode.commands.registerCommand(
+      "bazel.testAllRecursiveWithCoverage",
+      (adapter) => bazelTestAllRecursive(adapter, "coverage"),
     ),
     vscode.commands.registerCommand("bazel.clean", bazelClean),
   ];
