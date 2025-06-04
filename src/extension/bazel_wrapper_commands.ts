@@ -200,6 +200,7 @@ async function bazelRunTarget(adapter: IBazelCommandAdapter | undefined) {
 async function bazelTestTarget(
   adapter: IBazelCommandAdapter | undefined,
   mode: "test" | "coverage",
+  ...extraArgs: string[]
 ) {
   if (adapter === undefined) {
     // If the command adapter was unspecified, it means this command is being
@@ -222,12 +223,16 @@ async function bazelTestTarget(
   commandOptions.options = commandOptions.options.map(
     (opt) => "--test_arg=" + opt,
   );
+  commandOptions.options.push(...extraArgs);
   const task = createBazelTask(mode, commandOptions);
   // eslint-disable-next-line @typescript-eslint/no-floating-promises
   vscode.tasks.executeTask(task);
 }
 
-async function bazelDebugTestTarget(adapter: IBazelCommandAdapter | undefined) {
+async function bazelDebugTestTarget(
+  adapter: IBazelCommandAdapter | undefined,
+  ...extraArgs: string[]
+) {
   if (adapter === undefined) {
     // If the command adapter was unspecified, it means this command is being
     // invoked via the command palatte. Provide quickpick test targets for
@@ -255,7 +260,7 @@ async function bazelDebugTestTarget(adapter: IBazelCommandAdapter | undefined) {
   }
   const target = commandOptions.targets[0];
   const task = createBazelTask("build", {
-    options: ["--compilation_mode", "dbg"], // omit command options here, pass them as debug args instead
+    options: ["--compilation_mode", "dbg", ...extraArgs], // omit command options here, pass them as debug args instead
     targets: commandOptions.targets,
     workspaceInfo: commandOptions.workspaceInfo,
   });
@@ -270,6 +275,9 @@ async function bazelDebugTestTarget(adapter: IBazelCommandAdapter | undefined) {
     const disposable = vscode.tasks.onDidEndTaskProcess(async (event) => {
       if (event.execution === execution) {
         disposable.dispose();
+        if (event.exitCode !== 0) {
+          return;
+        }
         const outputs = await query.queryOutputs(target, [
           "--compilation_mode",
           "dbg",
@@ -284,6 +292,9 @@ async function bazelDebugTestTarget(adapter: IBazelCommandAdapter | undefined) {
           breakpointMode: "file",
           sourceMap: {
             "/proc/self/cwd": "${workspaceFolder}",
+            ...vscode.workspace
+              .getConfiguration("bazel")
+              .get<object>("extraDebugSourceMappings"),
           },
           logging: {
             programOutput: true,
@@ -472,12 +483,28 @@ export function activateWrapperCommands(): vscode.Disposable[] {
     vscode.commands.registerCommand("bazel.testTarget", (adapter) =>
       bazelTestTarget(adapter, "test"),
     ),
+    vscode.commands.registerCommand("bazel.testTargetDbg", (adapter) =>
+      bazelTestTarget(adapter, "test", "--compilation_mode=dbg"),
+    ),
+    vscode.commands.registerCommand("bazel.testTargetAsan", (adapter) =>
+      bazelTestTarget(adapter, "test", "--config=clang-asan"),
+    ),
+    vscode.commands.registerCommand("bazel.testTargetDbgAsan", (adapter) =>
+      bazelTestTarget(
+        adapter,
+        "test",
+        "--compilation_mode=dbg",
+        "--config=clang-asan",
+      ),
+    ),
     vscode.commands.registerCommand("bazel.testTargetWithCoverage", (adapter) =>
       bazelTestTarget(adapter, "coverage"),
     ),
-    vscode.commands.registerCommand(
-      "bazel.debugTestTarget",
-      bazelDebugTestTarget,
+    vscode.commands.registerCommand("bazel.debugTestTarget", (adapter) =>
+      bazelDebugTestTarget(adapter),
+    ),
+    vscode.commands.registerCommand("bazel.debugTestTargetAsan", (adapter) =>
+      bazelDebugTestTarget(adapter, "--config=clang-asan"),
     ),
     vscode.commands.registerCommand("bazel.testAll", bazelTestAll),
     vscode.commands.registerCommand("bazel.testAllRecursive", (adapter) =>

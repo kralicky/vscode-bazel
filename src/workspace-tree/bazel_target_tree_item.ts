@@ -128,6 +128,7 @@ export class BazelTargetTreeItem
   public parseGtestList(input: string): BazelGTestTreeItem[] {
     let currentTestGroup: string = "";
     let allTests: BazelGTestTreeItem[] = [];
+    let typeParams: string | undefined;
     input.split("\n").forEach((line) => {
       if (line.startsWith("  ")) {
         const split = line.split("#");
@@ -148,11 +149,19 @@ export class BazelTargetTreeItem
               this.workspaceInfo,
               this.target,
               currentTestGroup + split[0].trim(),
+              typeParams,
             ),
           );
         }
       } else {
-        currentTestGroup = line.trim();
+        const split = line.split("#");
+        if (split.length == 2) {
+          currentTestGroup = split[0].trim();
+          typeParams = split[1].trim();
+        } else {
+          currentTestGroup = split[0].trim();
+          typeParams = undefined;
+        }
       }
     });
     return allTests;

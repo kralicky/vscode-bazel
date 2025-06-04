@@ -73,8 +73,28 @@
             },
             {
                 "category": "Bazel",
+                "command": "bazel.testTargetDbg",
+                "title": "Test Target (dbg)"
+            },
+            {
+                "category": "Bazel",
+                "command": "bazel.testTargetAsan",
+                "title": "Test Target (asan)"
+            },
+            {
+                "category": "Bazel",
+                "command": "bazel.testTargetDbgAsan",
+                "title": "Test Target (dbg/asan)"
+            },
+            {
+                "category": "Bazel",
                 "command": "bazel.debugTestTarget",
                 "title": "Debug Test Target"
+            },
+            {
+                "category": "Bazel",
+                "command": "bazel.debugTestTargetAsan",
+                "title": "Debug Test Target (asan)"
             },
             {
                 "category": "Bazel",
@@ -236,6 +256,14 @@
                     ],
                     "default": "off",
                     "description": "Trace the communication between VS Code and Bazel LSP server (language server)."
+                },
+                "bazel.extraDebugSourceMappings": {
+                    "type": "object",
+                    "default": {},
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "description": "Extra sourceMap entries to add when debugging"
                 }
             }
         },
@@ -439,12 +467,32 @@
                     "group": "build"
                 },
                 {
+                    "command": "bazel.testTargetDbg",
+                    "when": "view == bazelWorkspace && viewItem == testRule",
+                    "group": "build"
+                },
+                {
+                    "command": "bazel.testTargetAsan",
+                    "when": "view == bazelWorkspace && viewItem == testRule",
+                    "group": "build"
+                },
+                {
+                    "command": "bazel.testTargetDbgAsan",
+                    "when": "view == bazelWorkspace && viewItem == testRule",
+                    "group": "build"
+                },
+                {
                     "command": "bazel.testTargetWithCoverage",
                     "when": "view == bazelWorkspace && viewItem == testRule",
                     "group": "build"
                 },
                 {
                     "command": "bazel.debugTestTarget",
+                    "when": "view == bazelWorkspace && viewItem == testRule",
+                    "group": "build"
+                },
+                {
+                    "command": "bazel.debugTestTargetAsan",
                     "when": "view == bazelWorkspace && viewItem == testRule",
                     "group": "build"
                 },
