@@ -487,14 +487,15 @@ export function activateWrapperCommands(): vscode.Disposable[] {
       bazelTestTarget(adapter, "test", "--compilation_mode=dbg"),
     ),
     vscode.commands.registerCommand("bazel.testTargetAsan", (adapter) =>
-      bazelTestTarget(adapter, "test", "--config=clang-asan"),
+      bazelTestTarget(adapter, "test", "--config=clang", "--config=asan"),
     ),
     vscode.commands.registerCommand("bazel.testTargetDbgAsan", (adapter) =>
       bazelTestTarget(
         adapter,
         "test",
         "--compilation_mode=dbg",
-        "--config=clang-asan",
+        "--config=clang",
+        "--config=asan",
       ),
     ),
     vscode.commands.registerCommand("bazel.testTargetWithCoverage", (adapter) =>
@@ -504,7 +505,7 @@ export function activateWrapperCommands(): vscode.Disposable[] {
       bazelDebugTestTarget(adapter),
     ),
     vscode.commands.registerCommand("bazel.debugTestTargetAsan", (adapter) =>
-      bazelDebugTestTarget(adapter, "--config=clang-asan"),
+      bazelDebugTestTarget(adapter, "--config=clang", "--config=asan"),
     ),
     vscode.commands.registerCommand("bazel.testAll", bazelTestAll),
     vscode.commands.registerCommand("bazel.testAllRecursive", (adapter) =>
