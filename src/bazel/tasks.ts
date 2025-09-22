@@ -19,7 +19,9 @@ import { BazelWorkspaceInfo } from "./bazel_workspace_info";
 import { exitCodeToUserString, parseExitCode } from "./bazel_exit_code";
 import { BazelInfo } from "./bazel_info";
 import { showLcovCoverage } from "../test-explorer";
-
+import * as fzstd from "fzstd";
+import * as tar from "tar-stream";
+import { Blob } from "buffer";
 export const TASK_TYPE = "bazel";
 
 /** Information about a running Bazel task. */
@@ -175,7 +177,40 @@ async function onTaskProcessEnd(event: vscode.TaskProcessEndEvent) {
     const covFilePath = outputPath + "/_coverage/_coverage_report.dat";
     const covFileUri = vscode.Uri.file(covFilePath);
     try {
-      const covFileBytes = await vscode.workspace.fs.readFile(covFileUri);
+      let covFileBytes = await vscode.workspace.fs.readFile(covFileUri);
+      if (
+        covFileBytes.length > 4 &&
+        covFileBytes[0] === 0x28 &&
+        covFileBytes[1] === 0xb5 &&
+        covFileBytes[2] === 0x2f &&
+        covFileBytes[3] === 0xfd
+      ) {
+        // decompress zstd
+        covFileBytes = fzstd.decompress(covFileBytes);
+      } else {
+        covFileBytes = covFileBytes;
+      }
+      if (
+        covFileBytes.length >= 500 &&
+        covFileBytes[257] === 0x75 &&
+        covFileBytes[258] === 0x73 &&
+        covFileBytes[259] === 0x74 &&
+        covFileBytes[260] === 0x61 &&
+        covFileBytes[261] === 0x72
+      ) {
+        const x = tar.extract();
+        x.end(covFileBytes);
+        for await (const entry of x) {
+          if (entry.header.name === "./lcov") {
+            const chunks: Uint8Array[] = [];
+            for await (const chunk of entry) {
+              chunks.push(Uint8Array.from(chunk));
+            }
+            covFileBytes = new Uint8Array(await new Blob(chunks).arrayBuffer());
+          }
+          entry.resume();
+        }
+      }
       const covFileStr = new TextDecoder("utf8").decode(covFileBytes);
       if (covFileStr.trim() === "") {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises

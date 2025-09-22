@@ -15,7 +15,7 @@
 import * as vscode from "vscode";
 import { BazelWorkspaceInfo, QueryLocation } from "../bazel";
 import { IBazelCommandAdapter, IBazelCommandOptions } from "../bazel";
-import { blaze_query } from "../protos";
+import { blaze_query, options } from "../protos";
 import { IBazelTreeItem } from "./bazel_tree_item";
 import { getBazelRuleIcon } from "./icons";
 import { Resources } from "../extension/resources";
@@ -25,16 +25,9 @@ import * as child_process from "child_process";
 import * as util from "util";
 import * as fs from "fs/promises";
 import { BazelGTestTreeItem } from "./bazel_gtest_tree_item";
+import { Stats } from "fs";
+import path = require("path");
 const execFile = util.promisify(child_process.execFile);
-
-async function fileExists(filename: string) {
-  try {
-    await fs.stat(filename);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** A tree item representing a build target. */
 export class BazelTargetTreeItem
@@ -58,23 +51,57 @@ export class BazelTargetTreeItem
   }
 
   public async getChildren(): Promise<IBazelTreeItem[]> {
-    const outputs = await new BazelCQuery(
+    const query = new BazelCQuery(
       getDefaultBazelExecutablePath(),
       this.workspaceInfo.bazelWorkspacePath,
-    ).queryOutputs(this.target.rule.name);
-    if (outputs.length !== 1) {
+    );
+    const outputsNoDebug = await query.queryOutputs(this.target.rule.name);
+    const outputsDebug = await query.queryOutputs(this.target.rule.name, [
+      "--compilation_mode",
+      "dbg",
+    ]);
+
+    var selectedFile: string | undefined = undefined;
+    if (outputsDebug.length === 0 && outputsNoDebug.length === 0) {
+      return [];
+    } else if (outputsDebug.length === 0) {
+      selectedFile = outputsNoDebug[0];
+    } else if (outputsNoDebug.length === 0) {
+      selectedFile = outputsDebug[0];
+    } else {
+      // choose whichever was built most recently
+      await Promise.allSettled([
+        fs.stat(
+          path.join(this.workspaceInfo.bazelWorkspacePath, outputsDebug[0]),
+        ),
+        fs.stat(
+          path.join(this.workspaceInfo.bazelWorkspacePath, outputsNoDebug[0]),
+        ),
+      ]).then(([debug, noDebug]) => {
+        if (debug.status === "fulfilled" && noDebug.status === "fulfilled") {
+          selectedFile =
+            debug.value.mtime > noDebug.value.mtime
+              ? outputsDebug[0]
+              : outputsNoDebug[0];
+        } else if (debug.status === "fulfilled") {
+          selectedFile = outputsDebug[0];
+        } else if (noDebug.status === "fulfilled") {
+          selectedFile = outputsNoDebug[0];
+        }
+      });
+    }
+    if (!selectedFile) {
       return [];
     }
-    if (fileExists(outputs[0])) {
-      try {
-        const { stdout } = await execFile(outputs[0], ["--gtest_list_tests"], {
-          cwd: this.workspaceInfo.bazelWorkspacePath,
-          maxBuffer: 500 * 1024,
-        });
-        return this.parseGtestList(stdout);
-      } catch {
-        return [];
-      }
+
+    try {
+      const { stdout } = await execFile(selectedFile, ["--gtest_list_tests"], {
+        cwd: this.workspaceInfo.bazelWorkspacePath,
+        maxBuffer: 500 * 1024,
+      });
+      return this.parseGtestList(stdout);
+    } catch {
+      return [];
     }
   }
 
